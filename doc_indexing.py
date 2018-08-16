@@ -3,6 +3,7 @@ import os
 import random
 import re
 import string
+import nltk
 from bs4 import BeautifulSoup
 from utils.constants import Constants
 from utils.es import *
@@ -23,6 +24,8 @@ def build_labels():
 
     return labels
 
+words = set(nltk.corpus.words.words())
+words.update(set(['viagra', 'xanax', 'valium', 'vicodin', 'morphine', 'percocet']))
 
 delete_index()
 create_index()
@@ -41,6 +44,11 @@ for f in files:
         text = ""
         e = email.message_from_string(data)
 
+    if e['subject'] != None:
+        text += e['subject'] + " "
+    else:
+        print("Subject in None: " + f)
+
     if e.is_multipart():
         for part in e.walk():
             for payload in e.get_payload():
@@ -48,11 +56,11 @@ for f in files:
                 cdispo = str(part.get('Content-Disposition'))
 
                 # skip any text/plain (txt) attachments
-                if ctype == 'text/plain' and 'attachment' not in cdispo:
-                    text += part.get_payload()  # decode
+                if (ctype == 'text/plain' or ctype == 'text/html') and 'attachment' not in cdispo:
+                    text += part.get_payload() + " "  # decode
                     break
     else:
-        text = e.get_payload()
+        text += e.get_payload() + " "
 
     # Clean the HTML tags
     text = BeautifulSoup(text, "lxml").text
@@ -67,6 +75,10 @@ for f in files:
     # If there is HTML comments, clean that as well
     text = re.sub("<!--.+?-->", "", text, flags=re.MULTILINE)
 
+    # Remove non-english words
+    text = " ".join(w for w in nltk.wordpunct_tokenize(text) \
+             if w.lower() in words or not w.isalpha())
+
     text = text.strip()
 
     # Remove punctuations
@@ -79,7 +91,7 @@ for f in files:
     else:
         is_test = 0
     is_spam = labels[f]
-    store_document(f, text, is_spam, is_test)
+    store_document(f, text, is_spam, is_test, len(text))
     counter += 1
 
 print(str(counter))
